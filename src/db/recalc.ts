@@ -1,10 +1,10 @@
 import { dbGet, dbAll, dbRun } from './db';
 
-// Recalculates missed days server side and saves the record in the notifications table.
-export async function recalculateMissedDays(): Promise<{ missedCount: number; statusMessage: string }> {
+// Recalculates missed days server side and saves the record in the notifications table, isolated by userId.
+export async function recalculateMissedDays(userId?: string): Promise<{ missedCount: number; statusMessage: string }> {
   try {
     // 1. Fetch start date
-    const configRow = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['start_date']);
+    const configRow = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['start_date'], userId);
     if (!configRow || !configRow.value) {
       const defaultStatus = 'Roadmap has not started yet. Please set a start date in the setup panel!';
       // Seed an empty notification to be safe
@@ -13,7 +13,7 @@ export async function recalculateMissedDays(): Promise<{ missedCount: number; st
         0,
         defaultStatus,
         checkedAt
-      ]);
+      ], userId);
       return { missedCount: 0, statusMessage: defaultStatus };
     }
 
@@ -37,12 +37,12 @@ export async function recalculateMissedDays(): Promise<{ missedCount: number; st
         0,
         futureStatus,
         new Date().toISOString()
-      ]);
+      ], userId);
       return { missedCount: 0, statusMessage: futureStatus };
     }
 
     // 2. Fetch completed day IDs
-    const completedRows = await dbAll<{ day_id: number }>('SELECT day_id FROM progress');
+    const completedRows = await dbAll<{ day_id: number }>('SELECT day_id FROM progress', [], userId);
     const completedSet = new Set(completedRows.map(r => r.day_id));
 
     // 3. Define the maximum day to check. The roadmap ends at day 95.
@@ -74,7 +74,7 @@ export async function recalculateMissedDays(): Promise<{ missedCount: number; st
       missedCount,
       statusMessage,
       checkedAt
-    ]);
+    ], userId);
 
     return { missedCount, statusMessage };
   } catch (error) {

@@ -13,6 +13,146 @@
   --color-danger-main: #F85149;
 }
 
+/* Light mode global overrides */
+[data-theme="light"] {
+  --color-bg: #F6F8FA;
+  --color-surface: #FFFFFF;
+  --color-border-main: #D0D7DE;
+  --color-text-main: #1F2328;
+  --color-text-muted: #57606A;
+}
+
+[data-theme="light"], [data-theme="light"] body {
+  background-color: #F6F8FA !important;
+  color: #1F2328 !important;
+}
+
+/* Light mode utility class overrides */
+[data-theme="light"] .bg-\[\#0A0C10\] {
+  background-color: #F6F8FA !important;
+}
+[data-theme="light"] .bg-\[\#161B22\] {
+  background-color: #FFFFFF !important;
+}
+[data-theme="light"] .bg-\[\#1C2128\] {
+  background-color: #F0F2F5 !important;
+}
+
+/* Gradients and dynamic transparencies */
+[data-theme="light"] .bg-gradient-to-br.from-\[\#1C2128\].to-\[\#161B22\] {
+  background-image: linear-gradient(to bottom right, #F9FAFB, #FFFFFF) !important;
+}
+[data-theme="light"] .from-\[\#1C2128\] {
+  --tw-gradient-from: #F9FAFB !important;
+}
+[data-theme="light"] .to-\[\#161B22\] {
+  --tw-gradient-to: #FFFFFF !important;
+}
+
+[data-theme="light"] .bg-\[\#161B22\]\/80 {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+}
+[data-theme="light"] .bg-\[\#161B22\]\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+[data-theme="light"] .bg-\[\#161B22\]\/90 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+[data-theme="light"] .bg-\[\#0A0C10\]\/40 {
+  background-color: rgba(246, 248, 250, 0.45) !important;
+}
+[data-theme="light"] .bg-\[\#30363D\]\/30 {
+  background-color: rgba(175, 184, 193, 0.15) !important;
+}
+[data-theme="light"] .bg-\[\#30363D\]\/60 {
+  background-color: rgba(175, 184, 193, 0.35) !important;
+}
+
+/* Borders */
+[data-theme="light"] .border-\[\#30363D\] {
+  border-color: #D0D7DE !important;
+}
+[data-theme="light"] .border-\[\#30363D\]\/40 {
+  border-color: rgba(208, 215, 222, 0.4) !important;
+}
+[data-theme="light"] .border-\[\#30363D\]\/60 {
+  border-color: rgba(208, 215, 222, 0.6) !important;
+}
+
+/* Text overrides */
+[data-theme="light"] .text-\[\#E6EDF3\] {
+  color: #1F2328 !important;
+}
+[data-theme="light"] .text-\[\#8B949E\] {
+  color: #57606A !important;
+}
+[data-theme="light"] .placeholder-\[\#484F58\]::placeholder {
+  color: #8C959F !important;
+}
+[data-theme="light"] .hover\:text-white:hover {
+  color: #1F2328 !important;
+}
+
+/* Headers overriding */
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6 {
+  color: #1F2328 !important;
+}
+
+[data-theme="light"] .text-white:not(button):not(.bg-\[\#2F81F7\]):not(.bg-\[\#238636\]):not(.bg-\[\#F85149\]):not(.bg-gradient-to-r) {
+  color: #1F2328 !important;
+}
+
+/* Active and inactive tabs */
+[data-theme="light"] .text-white.border-b-2.border-\[\#2F81F7\] {
+  color: #1F2328 !important;
+}
+
+/* Markdown modifications inside light mode */
+[data-theme="light"] .markdown-body h1,
+[data-theme="light"] .markdown-body h2,
+[data-theme="light"] .markdown-body h3,
+[data-theme="light"] .markdown-body h4 {
+  color: #1F2328 !important;
+}
+[data-theme="light"] .markdown-body p,
+[data-theme="light"] .markdown-body li {
+  color: #1F2328 !important;
+}
+[data-theme="light"] .markdown-body code {
+  background-color: rgba(175, 184, 193, 0.2) !important;
+  color: #CF222E !important;
+}
+[data-theme="light"] .markdown-body pre {
+  background-color: #F6F8FA !important;
+  border-color: #D0D7DE !important;
+}
+[data-theme="light"] .markdown-body pre code {
+  color: #1F2328 !important;
+}
+[data-theme="light"] .markdown-body strong {
+  color: #0969DA !important;
+}
+[data-theme="light"] .markdown-body blockquote {
+  border-color: #0969DA !important;
+  color: #57606A !important;
+}
+
+/* Scrollbar in Light Mode */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #F6F8FA !important;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #D0D7DE !important;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #8C959F !important;
+}
+
 body {
   font-family: 'Inter', -apple-system, sans-serif;
   background-color: #0A0C10;
