@@ -1,0 +1,6 @@
+{
+  "name": "Daily Roadmap Tracker",
+  "description": "A full-stack 95-day roadmap tracker for DevSecOps and AI/ML learning with SQLite, progress monitoring, streaks, and certifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
