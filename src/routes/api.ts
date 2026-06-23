@@ -18,10 +18,22 @@ const requireAuth = (req: AuthRequest, res: express.Response, next: express.Next
     return;
   }
   const token = authHeader.substring(7);
-  const user = findUserById(token);
+  
+  // Extract userId and username from the composite token format
+  const parts = token.split('|||');
+  const userId = parts[0];
+  const username = parts.length > 1 ? parts[1] : null;
+
+  let user = findUserById(userId);
   if (!user) {
-    res.status(401).json({ error: 'Session expired or user deleted. Please sign in again.' });
-    return;
+    if (userId.startsWith('user_') && username) {
+      // Dynamic recreate on server-side db reset to prevent logout across restarts
+      user = createUser(username, 'restored_session', userId);
+      console.log(`[AUTH SESSION RESTORED]: Automatically restored/recreated user: ${username} (${userId})`);
+    } else {
+      res.status(401).json({ error: 'Session expired or user deleted. Please sign in again.' });
+      return;
+    }
   }
   req.userId = user.id;
   next();
@@ -54,7 +66,7 @@ router.post('/auth/signup', async (req, res) => {
     const user = createUser(cleanUsername, password);
     res.json({
       success: true,
-      token: user.id,
+      token: `${user.id}|||${user.username}`,
       user: {
         id: user.id,
         username: user.username
@@ -83,7 +95,7 @@ router.post('/auth/login', async (req, res) => {
 
     res.json({
       success: true,
-      token: user.id,
+      token: `${user.id}|||${user.username}`,
       user: {
         id: user.id,
         username: user.username
@@ -138,6 +150,97 @@ router.get('/progress', requireAuth, async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error('Error fetching progress:', error);
     res.status(500).json({ error: 'Server error retrieving status' });
+  }
+});
+
+// POST /api/sync-backup - Bulk synchronizes a client-side localStorage state backup
+router.post('/sync-backup', requireAuth, async (req: AuthRequest, res: express.Response) => {
+  try {
+    const userId = req.userId!;
+    const { startDate, completed, customNotificationMessage, customNotificationTime, customNotificationEnabled, dailyGoals, aiMessages } = req.body;
+    
+    // 1. Save start date
+    if (startDate !== undefined) {
+      if (startDate) {
+        const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['start_date'], userId);
+        if (exists) {
+          await dbRun('UPDATE config SET value = ? WHERE key = ?', [startDate, 'start_date'], userId);
+        } else {
+          await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['start_date', startDate], userId);
+        }
+      } else {
+        const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['start_date'], userId);
+        if (exists) {
+          await dbRun('UPDATE config SET value = ? WHERE key = ?', ['', 'start_date'], userId);
+        } else {
+          await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['start_date', ''], userId);
+        }
+      }
+    }
+
+    // 2. Save completed progress day IDs
+    if (Array.isArray(completed)) {
+      // Clear all existing progress completions first
+      await dbRun('DELETE FROM progress', [], userId);
+      // Insert all completed day IDs
+      for (const dayId of completed) {
+        const completedAt = new Date().toISOString();
+        await dbRun('INSERT INTO progress (day_id, completed_at) VALUES (?, ?)', [Number(dayId), completedAt], userId);
+      }
+    }
+
+    // 3. Save notification config
+    if (customNotificationMessage !== undefined) {
+      const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['custom_notification_message'], userId);
+      if (exists) {
+        await dbRun('UPDATE config SET value = ? WHERE key = ?', [String(customNotificationMessage), 'custom_notification_message'], userId);
+      } else {
+        await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['custom_notification_message', String(customNotificationMessage)], userId);
+      }
+    }
+    if (customNotificationTime !== undefined) {
+      const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['custom_notification_time'], userId);
+      if (exists) {
+        await dbRun('UPDATE config SET value = ? WHERE key = ?', [String(customNotificationTime), 'custom_notification_time'], userId);
+      } else {
+        await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['custom_notification_time', String(customNotificationTime)], userId);
+      }
+    }
+    if (customNotificationEnabled !== undefined) {
+      const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['custom_notification_enabled'], userId);
+      if (exists) {
+        await dbRun('UPDATE config SET value = ? WHERE key = ?', [String(customNotificationEnabled), 'custom_notification_enabled'], userId);
+      } else {
+        await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['custom_notification_enabled', String(customNotificationEnabled)], userId);
+      }
+    }
+
+    // 4. Save daily goals
+    if (dailyGoals !== undefined) {
+      const goalsStr = JSON.stringify(dailyGoals);
+      const exists = await dbGet<{ value: string }>('SELECT value FROM config WHERE key = ?', ['daily_goals'], userId);
+      if (exists) {
+        await dbRun('UPDATE config SET value = ? WHERE key = ?', [goalsStr, 'daily_goals'], userId);
+      } else {
+        await dbRun('INSERT INTO config (key, value) VALUES (?, ?)', ['daily_goals', goalsStr], userId);
+      }
+    }
+
+    // 5. Save chat history
+    if (Array.isArray(aiMessages)) {
+      saveUserChat(userId, aiMessages);
+    }
+
+    // Trigger missed days recalculation in background to keep cached values correct
+    recalculateMissedDays(userId).catch(err => console.error('Background sync recalc error:', err));
+
+    res.json({
+      success: true,
+      message: 'State synchronized successfully from local backup'
+    });
+  } catch (error: any) {
+    console.error('Error synchronizing local backup:', error);
+    res.status(500).json({ error: 'Server error synchronizing state' });
   }
 });
 
@@ -316,27 +419,11 @@ router.post('/reset', requireAuth, async (req: AuthRequest, res) => {
 router.get('/notifications', requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.userId!;
-    let latestNotification = await dbGet<{
-      missed_count: number;
-      status_message: string;
-      checked_at: string;
-    }>('SELECT missed_count, status_message, checked_at FROM notifications ORDER BY id DESC LIMIT 1', [], userId);
-
-    // If no notification records exist, seed one immediately
-    if (!latestNotification) {
-      const freshCal = await recalculateMissedDays(userId);
-      res.json({
-        missedCount: freshCal.missedCount,
-        statusMessage: freshCal.statusMessage,
-        checkedAt: new Date().toISOString()
-      });
-      return;
-    }
-
+    const freshCal = await recalculateMissedDays(userId);
     res.json({
-      missedCount: latestNotification.missed_count,
-      statusMessage: latestNotification.status_message,
-      checkedAt: latestNotification.checked_at
+      missedCount: freshCal.missedCount,
+      statusMessage: freshCal.statusMessage,
+      checkedAt: new Date().toISOString()
     });
   } catch (error: any) {
     console.error('Error retrieving notifications:', error);

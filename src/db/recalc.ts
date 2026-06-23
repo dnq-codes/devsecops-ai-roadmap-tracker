@@ -18,11 +18,14 @@ export async function recalculateMissedDays(userId?: string): Promise<{ missedCo
     }
 
     const startDateStr = configRow.value;
-    const startDate = new Date(startDateStr);
+    const parts = startDateStr.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
     const today = new Date();
 
     // Reset times to compare dates accurately in local time zones
-    const startLocal = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const startLocal = new Date(year, month, day);
     const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     // Calculate difference in complete calendar days

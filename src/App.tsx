@@ -182,6 +182,41 @@ export default function App() {
   const [dailyGoals, setDailyGoals] = useState<DailyGoal[]>([]);
   const [newGoalText, setNewGoalText] = useState<string>('');
 
+  // Local storage synchronization helper to prevent data wipes across restarts
+  const updateLocalBackup = (
+    updatedCompletedDays?: Set<number>,
+    updatedStartDate?: string | null,
+    updatedNotiMsg?: string,
+    updatedNotiTime?: string,
+    updatedNotiEnabled?: boolean,
+    updatedDailyGoals?: DailyGoal[],
+    updatedAiMessages?: any[]
+  ) => {
+    try {
+      const backupStr = localStorage.getItem('devsecops_backup_data');
+      let currentBackup: any = {};
+      if (backupStr) {
+        try {
+          currentBackup = JSON.parse(backupStr);
+        } catch (_) {}
+      }
+      
+      const backupObj = {
+        startDate: updatedStartDate !== undefined ? updatedStartDate : (startDate !== undefined ? startDate : currentBackup.startDate),
+        completed: updatedCompletedDays !== undefined ? Array.from(updatedCompletedDays) : (completedDays !== undefined ? Array.from(completedDays) : currentBackup.completed || []),
+        customNotificationMessage: updatedNotiMsg !== undefined ? updatedNotiMsg : (notiMsg !== undefined ? notiMsg : currentBackup.customNotificationMessage),
+        customNotificationTime: updatedNotiTime !== undefined ? updatedNotiTime : (notiTime !== undefined ? notiTime : currentBackup.customNotificationTime),
+        customNotificationEnabled: updatedNotiEnabled !== undefined ? updatedNotiEnabled : (notiEnabled !== undefined ? notiEnabled : currentBackup.customNotificationEnabled),
+        dailyGoals: updatedDailyGoals !== undefined ? updatedDailyGoals : (dailyGoals !== undefined ? dailyGoals : currentBackup.dailyGoals || []),
+        aiMessages: updatedAiMessages !== undefined ? updatedAiMessages : (aiMessages !== undefined ? aiMessages : currentBackup.aiMessages || [])
+      };
+      
+      localStorage.setItem('devsecops_backup_data', JSON.stringify(backupObj));
+    } catch (e) {
+      console.error('Failed to update local backup state:', e);
+    }
+  };
+
   const handleSendAIMessage = async (customText?: string) => {
     const textToSend = customText || aiInput;
     if (!textToSend.trim() || aiLoading) return;
@@ -189,6 +224,7 @@ export default function App() {
     const queryMessage = { role: 'user' as const, content: textToSend };
     const newMessages = [...aiMessages, queryMessage];
     setAiMessages(newMessages);
+    updateLocalBackup(undefined, undefined, undefined, undefined, undefined, undefined, newMessages);
     setAiInput('');
     setAiLoading(true);
 
@@ -207,28 +243,32 @@ export default function App() {
       if (!res.ok) throw new Error("Could not reach AI Assistant server proxy");
       const data = await res.json();
       
-      setAiMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
+      const nextMessages = [...newMessages, { role: 'assistant' as const, content: data.text }];
+      setAiMessages(nextMessages);
+      updateLocalBackup(undefined, undefined, undefined, undefined, undefined, undefined, nextMessages);
     } catch (err: any) {
       console.error(err);
-      setAiMessages(prev => [
-        ...prev,
-        { 
-          role: 'assistant', 
-          content: `❌ **Offline or connection lost**: Failed to retrieve response from AI Mentor.\n\n*Reason: ${err.message || "Network Error"}*` 
-        }
-      ]);
+      const errorMessage = { 
+        role: 'assistant' as const, 
+        content: `❌ **Offline or connection lost**: Failed to retrieve response from AI Mentor.\n\n*Reason: ${err.message || "Network Error"}*` 
+      };
+      const nextMessages = [...newMessages, errorMessage];
+      setAiMessages(nextMessages);
+      updateLocalBackup(undefined, undefined, undefined, undefined, undefined, undefined, nextMessages);
     } finally {
       setAiLoading(false);
     }
   };
 
   const handleClearAIChat = () => {
-    setAiMessages([
+    const cleared = [
       {
-        role: 'assistant',
+        role: 'assistant' as const,
         content: `👋 Welcome! I am your AI DevOps & DevSecOps Mentor. Ask me any question about today's roadmap, request a hands-on mini-lab, or trigger a self-evaluation quiz!`
       }
-    ]);
+    ];
+    setAiMessages(cleared);
+    updateLocalBackup(undefined, undefined, undefined, undefined, undefined, undefined, cleared);
   };
 
   const generateResumeMarkdown = () => {
@@ -503,7 +543,43 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
         // 1. Fetch progress
         const progressRes = await fetchWithAuth('/api/progress');
         if (!progressRes.ok) throw new Error('Failed to fetch progress telemetry');
-        const progressData = await progressRes.json();
+        let progressData = await progressRes.json();
+
+        // Dynamic restore / sync-backup from client localStorage if the server was restarted
+        const backupStr = localStorage.getItem('devsecops_backup_data');
+        if (backupStr && !progressData.startDate && (!progressData.completed || progressData.completed.length === 0)) {
+          try {
+            const backupObj = JSON.parse(backupStr);
+            console.log('[LOCAL STORAGE RESTORE]: Restoring session state to server...', backupObj);
+            const syncRes = await fetchWithAuth('/api/sync-backup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(backupObj)
+            });
+            if (syncRes.ok) {
+              const updatedProgressRes = await fetchWithAuth('/api/progress');
+              if (updatedProgressRes.ok) {
+                progressData = await updatedProgressRes.json();
+              }
+            }
+          } catch (err) {
+            console.error('[LOCAL STORAGE RESTORE ERROR]: Failed to sync backup to backend:', err);
+          }
+        }
+
+        // Save a fresh backup copy locally whenever we load non-empty progress
+        if (progressData.startDate || (progressData.completed && progressData.completed.length > 0)) {
+          const backupObj = {
+            startDate: progressData.startDate,
+            completed: progressData.completed || [],
+            customNotificationMessage: progressData.customNotificationMessage,
+            customNotificationTime: progressData.customNotificationTime,
+            customNotificationEnabled: progressData.customNotificationEnabled,
+            dailyGoals: progressData.dailyGoals || [],
+            aiMessages: progressData.aiMessages || []
+          };
+          localStorage.setItem('devsecops_backup_data', JSON.stringify(backupObj));
+        }
         
         setCompletedDays(new Set(progressData.completed || []));
         setStartDate(progressData.startDate);
@@ -659,6 +735,7 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
         } else {
           next.delete(dayNumber);
         }
+        updateLocalBackup(next);
         return next;
       });
 
@@ -693,6 +770,7 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
       setNotiMsg(data.message);
       setNotiTime(data.time);
       setNotiEnabled(data.enabled);
+      updateLocalBackup(undefined, undefined, data.message, data.time, data.enabled);
 
       setNotiUIMessage({
         text: `Success: Alerts configured for ${data.time}!`,
@@ -766,6 +844,7 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ goals: updatedGoals })
       });
+      updateLocalBackup(undefined, undefined, undefined, undefined, undefined, updatedGoals);
     } catch (err) {
       console.error('Failed to sync daily goals with DB:', err);
     }
@@ -815,6 +894,7 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
       const data = await res.json();
 
       setStartDate(setupDateInput);
+      updateLocalBackup(undefined, setupDateInput);
       setNotification({
         missedCount: data.missedCount,
         statusMessage: data.statusMessage,
@@ -838,20 +918,18 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
       const data = await res.json();
 
       setCompletedDays(new Set());
+      const clearedChat = data.aiMessages || [
+        {
+          role: 'assistant' as const,
+          content: "👋 Welcome! I am your AI DevOps & DevSecOps Mentor. Ask me any question about today's roadmap, request a hands-on mini-lab, or trigger a self-evaluation quiz!"
+        }
+      ];
+      setAiMessages(clearedChat);
+      updateLocalBackup(new Set(), undefined, undefined, undefined, undefined, undefined, clearedChat);
       setNotification({
         missedCount: data.missedCount,
         statusMessage: data.statusMessage,
       });
-      if (data.aiMessages) {
-        setAiMessages(data.aiMessages);
-      } else {
-        setAiMessages([
-          {
-            role: 'assistant',
-            content: "👋 Welcome! I am your AI DevOps & DevSecOps Mentor. Ask me any question about today's roadmap, request a hands-on mini-lab, or trigger a self-evaluation quiz!"
-          }
-        ]);
-      }
     } catch (err: any) {
       alert(err.message || 'Failed to complete reset');
     } finally {
@@ -862,11 +940,14 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
   // Helper date calculation
   const getDaysPassed = () => {
     if (!startDate) return null;
-    const sDate = new Date(startDate);
+    const parts = startDate.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
     const today = new Date();
     
     // Normalize dates to local midnight for standard calendars
-    const startLocal = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate());
+    const startLocal = new Date(year, month, day);
     const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const diffTime = todayLocal.getTime() - startLocal.getTime();
@@ -936,6 +1017,37 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
   })();
   const remainingCount = 95 - completedCount;
   const progressPercent = Math.round((completedCount / 95) * 100);
+
+  // Dynamically resolved notification data completely synchronized with client timezone & completions
+  const resolvedNotification = (() => {
+    if (!startDate) {
+      return {
+        missedCount: 0,
+        statusMessage: 'Roadmap has not started yet. Please set a start date in the setup panel!'
+      };
+    }
+    if (currentDayNum !== null && currentDayNum < 1) {
+      return {
+        missedCount: 0,
+        statusMessage: `Roadmap starting on ${startDate}. Prepare your resources!`
+      };
+    }
+    
+    let statusMessage = '';
+    if (missedCount === 0) {
+      if (currentDayNum !== null && currentDayNum > 95) {
+        statusMessage = "Congratulations! You have completed all 95 days of your DevSecOps + AI/ML learning journey!";
+      } else {
+        statusMessage = "Awesome! You are perfectly on track! You haven't missed any days.";
+      }
+    } else {
+      statusMessage = `You missed ${missedCount} task${missedCount > 1 ? 's' : ''} since starting on ${startDate}. Head over to 'Missed' tab to recover!`;
+    }
+    return {
+      missedCount,
+      statusMessage
+    };
+  })();
 
   // Tabbed Lists Filter
   const tabTasks = (() => {
@@ -1653,9 +1765,9 @@ Ready to deploy secure, resilient architectures and automate elite pipeline work
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 text-[#D29922] font-semibold">
               <Info size={15} className="shrink-0" />
-              <span id="notification-message">{notification.statusMessage}</span>
+              <span id="notification-message">{resolvedNotification.statusMessage}</span>
             </div>
-            {notification.missedCount > 0 && activeTab !== 'missed' && (
+            {resolvedNotification.missedCount > 0 && activeTab !== 'missed' && (
               <button
                 onClick={() => setActiveTab('missed')}
                 className="bg-[#2F81F7] hover:bg-[#2F81F7]/80 text-white font-bold py-0.5 px-2.5 rounded text-[11px] transition whitespace-nowrap shrink-0 flex items-center gap-1"

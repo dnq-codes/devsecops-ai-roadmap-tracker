@@ -81,9 +81,9 @@ export function findUserById(id: string): UserData | undefined {
   return inMemoryData.users.find(u => u.id === id);
 }
 
-export function createUser(username: string, passwordHash: string): UserData {
+export function createUser(username: string, passwordHash: string, customId?: string): UserData {
   const newUser: UserData = {
-    id: 'user_' + Math.random().toString(36).substr(2, 9),
+    id: customId || 'user_' + Math.random().toString(36).substr(2, 9),
     username: username,
     passwordHash: passwordHash,
     config: {},
